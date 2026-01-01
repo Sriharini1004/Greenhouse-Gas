@@ -1,0 +1,129 @@
+#include <WiFi.h>
+#include <ThingSpeak.h>
+#include "DHT.h"
+#include <LiquidCrystal_I2C.h>
+
+/* -------- WiFi -------- */
+const char* ssid = "Wokwi-GUEST";
+const char* password = "";
+
+/* -------- ThingSpeak -------- */
+unsigned long myChannelNumber = 3217044;     
+const char* myApiKey = "BAPKKXQK5WBOMRX1";  
+WiFiClient client;
+
+/* -------- Pin Definitions -------- */
+#define GAS_SENSOR 34
+#define LDR_SENSOR 35
+#define LED_PIN 3
+#define BUZZER_PIN 14
+#define DHTPIN 4
+
+#define DHTTYPE DHT11
+
+DHT dht(DHTPIN, DHTTYPE);
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+/* -------- Threshold -------- */
+int gasThreshold = 1000;
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
+  
+ 
+   digitalWrite(BUZZER_PIN, LOW);
+   digitalWrite(LED_PIN, LOW);
+  
+  dht.begin();
+  lcd.init();
+  lcd.backlight();
+
+  /* -------- WiFi Connect -------- */
+  Serial.print("Connecting WiFi");
+  lcd.setCursor(0,0);
+  lcd.print("Connecting WiFi");
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi Connected");
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("WiFi Connected");
+
+  /* -------- ThingSpeak -------- */
+  ThingSpeak.begin(client);
+
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+
+  /* -------- Read Sensors -------- */
+  int gasValue = analogRead(GAS_SENSOR);
+  int lightValue = analogRead(LDR_SENSOR);
+  float humidity = dht.readHumidity();
+  float temperature = dht.readTemperature();
+
+  /* -------- SERIAL -------- */
+  Serial.println("------ Sensor Readings ------");
+  Serial.print("Gas Level: "); Serial.println(gasValue);
+  Serial.print("Light: "); Serial.println(lightValue);
+  Serial.print("Temperature: "); Serial.print(temperature); Serial.println(" C");
+  Serial.print("Humidity: "); Serial.print(humidity); Serial.println(" %");
+
+  /* -------- LCD -------- */
+  lcd.setCursor(0,0);
+  lcd.print("Gas:");
+  lcd.print(gasValue);
+  lcd.print("   ");
+
+  lcd.setCursor(0,1);
+  lcd.print("T:");
+  lcd.print(temperature);
+  lcd.print(" H:");
+  lcd.print(humidity);
+
+  /* -------- ALERT -------- */
+  if (gasValue > gasThreshold) {
+   
+    digitalWrite(BUZZER_PIN, HIGH);
+    digitalWrite(LED_PIN, HIGH);
+    Serial.println("⚠ ALERT: HIGH GAS");
+
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print("GAS ALERT!");
+    lcd.setCursor(0,1);
+    lcd.print("LEVEL HIGH");
+  } else {
+     digitalWrite(BUZZER_PIN, LOW);
+    digitalWrite(LED_PIN, LOW);
+   
+  }
+
+  /* -------- THINGSPEAK -------- */
+  ThingSpeak.setField(1, gasValue);       // Gas
+  ThingSpeak.setField(2, temperature);    // Temperature
+  ThingSpeak.setField(3, humidity);       // Humidity
+  ThingSpeak.setField(4, lightValue);     // Light
+
+  int status = ThingSpeak.writeFields(myChannelNumber, myApiKey);
+
+  if (status == 200) {
+    Serial.println("ThingSpeak Update OK");
+  } else {
+    Serial.println("ThingSpeak Error: " + String(status));
+  }
+
+  Serial.println("-----------------------------\n");
+
+  delay(20000);   
+}
